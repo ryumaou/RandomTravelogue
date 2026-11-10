@@ -5,14 +5,13 @@ from collections import defaultdict
 import random
 import copy
 import math
-import loremipsum
 
 from parsecom import *
 
 def retrying(f, max_tries=100):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        for _ in xrange(max_tries):
+        for _ in range(max_tries):
             try:
                 return f(*args, **kwargs)
             except AssertionError:
@@ -216,7 +215,7 @@ def combine(*gens):
 def cleanup(txt):
     txt = re.sub('\s+', ' ', txt) # remove multiple spaces
     txt = re.sub(r' ([\.,;:!\?])', r'\1', txt) # remove space before punctuation
-    txt = re.sub(ur'a\(n\)\s*(\W+)([aeiouáéíóúäëïöü])', r'an \1\2', txt,
+    txt = re.sub(r'a\(n\)\s*(\W+)([aeiouáéíóúäëïöü])', r'an \1\2', txt,
             flags=re.UNICODE | re.IGNORECASE)
     txt = re.sub(r'a\(n\)', r'a', txt)
     def cap(m):
@@ -235,9 +234,9 @@ class Director(object):
         for k, v in args:
             lexicon[k].append(v)
         self.lexicon = {}
-        for k, v in lexicon.iteritems():
+        for k, v in lexicon.items():
             if len(v) > 1:
-                print "Got %d definitions for %s" % (len(v), k)
+                print("Got %d definitions for %s" % (len(v), k))
                 self.lexicon[k] = ChoiceGen(*v)
             else:
                 self.lexicon[k] = v[0]
@@ -407,15 +406,19 @@ def choose(director, value, *gens):
     n = len(gens) - 1
     p = 1 / (1 + math.exp(-value/2))
     k = 0
-    for _ in xrange(n):
+    for _ in range(n):
         k += random.random() < p
     return gens[k]()
 
 @stdlib("repeat", int)
 def repeat(director, n, gen):
-    return ' '.join(gen() for _ in xrange(n))
+    return ' '.join(gen() for _ in range(n))
 
 @stdlib("lorem")
 def lorem(director):
-    return loremipsum.get_sentence()
+    return random.choice((
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.",
+    ))
 

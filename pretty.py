@@ -1,7 +1,10 @@
 import click
 import describe
 import re
-import readline
+try:
+    import readline
+except ImportError:
+    readline = None
 import sys
 import traceback
 
@@ -18,7 +21,7 @@ def print_defn(key, value=None, width=80):
     pretty = value.pretty(wrap=width - length)
     prefix = "%s = " % key
     for line in pretty:
-        print prefix + line
+        print(prefix + line)
         prefix = " " * length
 
 
@@ -51,21 +54,23 @@ def graph():
     nodes, edges = get_graph()
     parent_counts = Counter([x[1] for x in edges])    
     
-    print """
+    print("""
 digraph G {
     graph [rankdir="LR"];
-    """
+    """)
     for node in nodes:
-        print 'node_%s [label="%s", color="%s"];' % (node, node, "red" if
-                parent_counts[node] == 1 else "green")
+        print('node_%s [label="%s", color="%s"];' % (node, node, "red" if
+                parent_counts[node] == 1 else "green"))
     for parent, child in edges:
-        print "node_%s -> node_%s;" % (parent, child)
-    print """
+        print("node_%s -> node_%s;" % (parent, child))
+    print("""
 }
-    """
+    """)
 
 @cli.command()
 def test():
+    if readline is None:
+        raise click.ClickException("Install pyreadline3 for interactive completion on Windows.")
     readline.parse_and_bind("tab: complete")
     desc = describe.desc
     kwargs = {
@@ -83,24 +88,24 @@ def test():
             if state < len(labels):
                 return labels[state]
         
-        cmd = raw_input("> ").split()
+        cmd = input("> ").split()
         name = cmd[0]
         repeats = 1
         if len(cmd) > 1:
             repeats = int(cmd[1])
         try:
-            desc = describe.parser(open("description.grammar").read())
+            desc = describe.parser(describe.grammar)
         except:
-            print "Parse error"
+            print("Parse error")
             continue
         desc.function("word")(lambda *args: "WORD")
         desc.function("name")(lambda *args: "NAME")
         try:
-            for _ in xrange(repeats):
-                print desc(name, **kwargs)
+            for _ in range(repeats):
+                print(desc(name, **kwargs))
         except:
             t, v, tb = sys.exc_info()
-            print "Runtime error", t, v
+            print("Runtime error", t, v)
             traceback.print_tb(tb)
             del tb
             continue

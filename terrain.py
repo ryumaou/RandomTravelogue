@@ -12,16 +12,15 @@ import scipy.sparse.csgraph as csg
 import scipy.sparse.linalg as sla
 from collections import defaultdict
 import heapq
-import noise
-import cPickle
+from coherent_noise import perlin2
+import pickle
 import gzip
 import itertools
 
-tex = True
+tex = False
 
 if tex:
     plt.rcParams['text.usetex'] = True
-    plt.rcParams['text.latex.unicode'] = True
     plt.rcParams['font.family'] = 'palatino'
 else:
     plt.rcParams['font.family'] = "Palatino Linotype"
@@ -38,17 +37,18 @@ def distance(a, b):
         return np.sum(disp2) ** 0.5
 
 def trislope(xys, zs):
-    a = np.matrix(np.column_stack((xys, [1, 1, 1])))
+    a = np.column_stack((xys, [1, 1, 1]))
     b = np.asarray(zs).reshape((3,1))
-    x = a.I * b
+    x = np.linalg.solve(a, b)
     return x[0,0], x[1,0]
 
 def relaxpts(pts, idxs, n=1):
+    idxs = list(idxs)
     adj = defaultdict(list)
     for p1, p2 in idxs:
         adj[p1].append(p2)
         adj[p2].append(p1)
-    for _ in xrange(n):
+    for _ in range(n):
         newpts = pts.copy()
         for p in adj:
             if len(adj[p]) == 1:
@@ -60,6 +60,7 @@ def relaxpts(pts, idxs, n=1):
                for p1, p2 in idxs]
 
 def mergelines(segs):
+    segs = list(segs)
     n = len(segs)
     segs = set((tuple(a), tuple(b)) for (a, b) in segs)
     assert len(segs) == n
@@ -115,12 +116,12 @@ def mergelines(segs):
     if line is not None:
         length += len(line) - 1
         lines.append(mpl.path.Path(line))
-    print length
+    print(length)
     return lines
 
 def load(filename):
-    with gzip.open(filename) as f:
-        return cPickle.loads(f.read())
+    with gzip.open(filename, "rb") as f:
+        return pickle.loads(f.read())
 
 city_counts = {
         'shore': (12, 20),
@@ -143,7 +144,7 @@ riverpercs = {
 class MapException(Exception):
     pass
 class MapGrid(object):
-    def __init__(self, mode='shore', n=16384):
+    def __init__(self, mode='island', n=16384):
         self.mode = mode
         self.lang = language.get_language()
         self.build_grid(n)
@@ -165,8 +166,8 @@ class MapGrid(object):
         return [c for c in self.cities if self.territories[c] == c]
 
     def save(self, filename):
-        with gzip.open(filename, "w") as f:
-            f.write(cPickle.dumps(self))
+        with gzip.open(filename, "wb") as f:
+            f.write(pickle.dumps(self))
 
     def build_grid(self, n):
         self.pts = np.random.random((n, 2))
@@ -183,7 +184,7 @@ class MapGrid(object):
         self.erodability = np.ones(self.nvxs)
 
     def do_erosion(self, n, rate=0.01):
-        for _ in xrange(n):
+        for _ in range(n):
             self.calc_downhill()
             self.calc_flow()
             self.calc_slopes()
@@ -213,11 +214,11 @@ class MapGrid(object):
 
         
     def improve_pts(self, n=2):
-        print "Improving points"
-        for _ in xrange(n):
+        print("Improving points")
+        for _ in range(n):
             vor = spl.Voronoi(self.pts)
             newpts = []
-            for idx in xrange(len(vor.points)):
+            for idx in range(len(vor.points)):
                 pt = vor.points[idx,:]
                 region = vor.regions[vor.point_region[idx]]
                 if -1 in region:
@@ -231,13 +232,13 @@ class MapGrid(object):
             self.pts = np.asarray(newpts)
     
     def improve_vxs(self):
-        print "Improving vertices"
+        print("Improving vertices")
         n = self.nvxs
-        for v in xrange(n):
+        for v in range(n):
             self.vxs[v,:] = np.mean(self.pts[self.vx_regions[v]], 0)
         
     def build_adjs(self):
-        print "Building adjacencies"
+        print("Building adjacencies")
         self.adj_pts = defaultdict(list)
         self.adj_vxs = defaultdict(list)
         for p1, p2 in self.vor.ridge_points:
@@ -247,23 +248,23 @@ class MapGrid(object):
             self.adj_vxs[v1].append(v2)
             self.adj_vxs[v2].append(v1)
         self.vx_regions = defaultdict(list)
-        for p in xrange(self.pts.shape[0]):
+        for p in range(self.pts.shape[0]):
             for v in self.regions[p]:
                 if v != -1:
                     self.vx_regions[v].append(p)
         self.tris = defaultdict(list)
-        for p in xrange(self.pts.shape[0]):
+        for p in range(self.pts.shape[0]):
             for v in self.regions[p]:
                 self.tris[v].append(p)
         self.adj_mat = np.zeros((self.nvxs, 3), np.int32) - 1
-        for k, v in self.adj_vxs.iteritems():
+        for k, v in self.adj_vxs.items():
             if k != -1:    
                 self.adj_mat[k,:] = v
 
     def calc_edges(self):
         n = self.nvxs
-        self.edge = np.zeros(n, np.bool)
-        for u in xrange(n):
+        self.edge = np.zeros(n, bool)
+        for u in range(n):
             adjs = self.adj_vxs[u]
             if -1 in adjs:# or \
 #                     np.all(self.vxs[adjs,0] > self.vxs[u,0]) or \
@@ -275,8 +276,7 @@ class MapGrid(object):
     def perlin(self, base=None):
         if base is None:
             base = np.random.randint(1000)
-        return np.array([noise.pnoise2(x, y, lacunarity=1.7, octaves=3,
-            base=base) for x, y in self.vxs])
+        return perlin2(self.vxs, seed=base)
    
     def distort_vxs(self):
         self.dvxs = self.vxs.copy()
@@ -291,17 +291,17 @@ class MapGrid(object):
     def mixed_heightmap(self):
         mode1, mode2 = self.mode.split("/")
         hm1 = self.single_heightmap(mode1)
-        print "HM1:", mode1, hm1.max(), hm1.min(), hm1.mean()
+        print("HM1:", mode1, hm1.max(), hm1.min(), hm1.mean())
         hm2 = self.single_heightmap(mode2)
-        print "HM2:", mode2, hm2.max(), hm2.min(), hm2.mean()
+        print("HM2:", mode2, hm2.max(), hm2.min(), hm2.mean())
         mix = 20 * (self.dvxs[:,0] - self.dvxs[:,1])
         mixing = 1/(1 + np.exp(-mix))
-        print "MIX:", mixing.max(), mixing.min(), mixing.mean()
+        print("MIX:", mixing.max(), mixing.min(), mixing.mean())
         self.elevation[:-1] = mixing * hm2 + (1 - mixing) * hm1
         self.clean_coast()
 
     def shore_heightmap(self):
-        print "Calculating elevations"
+        print("Calculating elevations")
         n = self.nvxs
         self.elevation = np.zeros(n + 1)
         self.elevation[:-1] = 0.5 + ((self.dvxs - 0.5) * np.random.normal(0, 4, (1,2))).sum(1)
@@ -309,15 +309,15 @@ class MapGrid(object):
         mountains = np.random.random((50, 2))
         for m in mountains:
             self.elevation[:-1] += np.exp(-distance(self.vxs, m) ** 2 / (2 * 0.05 ** 2)) ** 2
-        print "Edge height:", self.elevation[:-1][self.edge].max()
+        print("Edge height:", self.elevation[:-1][self.edge].max())
         
         along = (((self.dvxs - 0.5) * np.random.normal(0, 2, (1,2))).sum(1) + np.random.normal(0, 0.5)) * 10
         self.erodability = np.exp(4 * np.arctan(along))
         
-        for i in xrange(5):
+        for i in range(5):
             self.rift()
             self.relax()
-        for i in xrange(5):
+        for i in range(5):
             self.relax()
         self.normalize_elevation()
 
@@ -343,7 +343,7 @@ class MapGrid(object):
             v = np.random.normal(0, 0.05)
             d = ((x - u) ** 2 + (y - v) ** 2) ** 0.5
             eruption = np.maximum(1 + 0.2 * i - d/0.15, 0) ** 2
-            print "Erupting", self.vxs[np.argmax(eruption),:]
+            print("Erupting", self.vxs[np.argmax(eruption),:])
             self.elevation[:-1] = np.maximum(
                     self.elevation[:-1], eruption)
             self.do_erosion(20, 0.005)
@@ -368,7 +368,7 @@ class MapGrid(object):
         for m in mountains:
             self.elevation[:-1] += np.exp(-distance(self.vxs, m) ** 2 / (2 * 0.05 ** 2)) ** 2
         self.erodability[:] = np.exp(50 - 10 * self.elevation[:-1])
-        for _ in xrange(5):
+        for _ in range(5):
             self.rift()
         self.do_erosion(250, 0.02)
         self.elevation *= 0.5
@@ -386,7 +386,7 @@ class MapGrid(object):
 
     def relax(self):
         newelev = np.zeros_like(self.elevation[:-1])
-        for u in xrange(self.nvxs):
+        for u in range(self.nvxs):
             adjs = [v for v in self.adj_vxs[u] if v != -1]
             if len(adjs) < 2: continue
             newelev[u] = np.mean(self.elevation[adjs])
@@ -402,7 +402,7 @@ class MapGrid(object):
     def calc_elevation_pts(self):
         npts = self.pts.shape[0]
         self.elevation_pts = np.zeros(npts)
-        for p in xrange(npts):
+        for p in range(npts):
             if self.regions[p]:
                 self.elevation_pts[p] = np.mean(self.elevation[self.regions[p]])
           
@@ -475,11 +475,11 @@ class MapGrid(object):
             sinks = self.get_sinks()
             if np.all(sinks == -1):
                 if tries > 1:
-                    print tries, "tries"
+                    print(tries, "tries")
                 return
             if tries == 1:
-                print "Infilling", np.sum(sinks != -1), np.mean(self.vxs[sinks
-                    != -1, :], 0),
+                print("Infilling", np.sum(sinks != -1), np.mean(self.vxs[sinks
+                    != -1, :], 0), end=" ")
             h, u, v = self.find_lowest_sill(sinks)
             sink = sinks[u]
             if self.downhill[v] != -1:
@@ -490,9 +490,9 @@ class MapGrid(object):
             self.calc_downhill()
     
     def clean_coast(self, n=3, outwards=True):
-        for _ in xrange(n):
+        for _ in range(n):
             new_elev = self.elevation[:-1].copy()
-            for u in xrange(self.nvxs):
+            for u in range(self.nvxs):
                 if self.edge[u] or self.elevation[u] <= 0:
                     continue
                 adjs = self.adj_vxs[u]
@@ -501,7 +501,7 @@ class MapGrid(object):
                     new_elev[u] = np.mean(adjelevs[adjelevs <= 0])
             self.elevation[:-1] = new_elev
             if outwards:
-                for u in xrange(self.nvxs):
+                for u in range(self.nvxs):
                     if self.edge[u] or self.elevation[u] > 0:
                         continue
                     adjs = self.adj_vxs[u]
@@ -544,7 +544,7 @@ class MapGrid(object):
         n = self.vxs.shape[0]
         g = spa.dok_matrix((n+2, n+2))
         edge = self.extend_area(self.edge, 5)
-        for u in xrange(n):
+        for u in range(n):
             for v in self.adj_vxs[u]:
                 if not (edge[u] and edge[v]):
                     g[u, v] = self.edge_weight(u, v)
@@ -576,7 +576,7 @@ class MapGrid(object):
         try:
             return self.path_cache[start, end]
         except KeyError:
-            print "WARNING: Uncached path search", start, end
+            print("WARNING: Uncached path search", start, end)
             pass
         best_dir = {}
         q = []
@@ -596,10 +596,10 @@ class MapGrid(object):
                     path.append(best_dir[path[-1]])
                 if flipped:
                     self.path_cache[end, u] = path[::-1], dist
-                    print "CACHE", len(self.path_cache)
+                    print("CACHE", len(self.path_cache))
                 else:
                     self.path_cache[u, end] = path, dist
-                    print "CACHE", len(self.path_cache)
+                    print("CACHE", len(self.path_cache))
             length = dist
             if isinstance(start, str) and self.edge[u]:
                 if (start == "topleft" and 
@@ -619,11 +619,11 @@ class MapGrid(object):
             path.append(best_dir[path[-1]])
         if flipped:
             self.path_cache[end, start] = path[::-1], length
-            print "CACHE", len(self.path_cache)
+            print("CACHE", len(self.path_cache))
             return path[::-1], length
         else:
             self.path_cache[start, end] = path, length
-            print "CACHE", len(self.path_cache)
+            print("CACHE", len(self.path_cache))
             return path, length
 
     def grow_territory(self, n=7):
@@ -644,7 +644,7 @@ class MapGrid(object):
         self.territories = done
 
     def extend_area(self, area, n):
-        for _ in xrange(10):
+        for _ in range(10):
             adj = self.adj_mat[area,:]
             area[adj[adj != -1]] = True
         return area
@@ -671,14 +671,14 @@ class MapGrid(object):
 
 
     def plot(self, filename, rivers=True, cmap=mpl.cm.Greys, **kwargs):
-        print "Plotting"
+        print("Plotting")
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_axes([0,0,1,1])
                 
         elev = np.where(self.elevation > 0, 0.1, 0)
         good = ~self.extend_area(self.edge, 10)
            
-        goodidxs = [i for i in xrange(self.nvxs) if good[i]]
+        goodidxs = [i for i in range(self.nvxs) if good[i]]
         tris = [self.tris[i] for i in goodidxs]
         elevs = elev[goodidxs]
 
@@ -728,8 +728,8 @@ class MapGrid(object):
         if rivers:
             land = good & (self.elevation[:-1] > 0) & (self.downhill != -1) & \
                    (self.flow > np.percentile(self.flow, 100 - self.riverperc))
-            rivers = relaxpts(self.vxs, [(u, self.downhill[u]) for u in xrange(self.nvxs) if land[u]])
-            print len(rivers), sum(land)
+            rivers = relaxpts(self.vxs, [(u, self.downhill[u]) for u in range(self.nvxs) if land[u]])
+            print(len(rivers), sum(land))
             rivers = mergelines(rivers)
             rivercol = mpl.collections.PathCollection(rivers)
             rivercol.set_edgecolor('black')
@@ -751,7 +751,7 @@ class MapGrid(object):
             ec='none'
         )
         for city in self.cities:
-            ax.annotate(xy=self.vxs[city,:], s=self.city_names[city],
+            ax.annotate(xy=self.vxs[city,:], text=self.city_names[city],
                          xytext=(0,12 if city in bigcities else 8),
                          ha='center', va='center',
                          textcoords = 'offset points',
@@ -791,10 +791,10 @@ class MapGrid(object):
             xy = self.vxs[np.argmax(scores),:]
             #ax.axvspan(xy[0] - w, xy[0] + w, xy[1] - 0.07, xy[1] + 0.03,
                     #facecolor='none', edgecolor='red', zorder=19)
-            print "Labelling %s at %.1f" % (name, scores.max())
+            print("Labelling %s at %.1f" % (name, scores.max()))
             reglabels.append(xy)
             label = (r"\sc " + name) if tex else name
-            ax.annotate(xy=xy, s=label,
+            ax.annotate(xy=xy, text=label,
                          ha='center', va='center',
                          bbox=labelbox,
                          size='large',
@@ -817,7 +817,7 @@ class MapGrid(object):
                 coasts.append(self.pts[rp, :])
                 
         borders = mergelines(relaxpts(self.pts, borders))
-        print "Borders:", len(borders)
+        print("Borders:", len(borders))
         bordercol = mpl.collections.PathCollection(borders)
         bordercol.set_facecolor('none')
         bordercol.set_edgecolor('black')
@@ -868,16 +868,16 @@ class MapGrid(object):
             self.region_names[region] = self.lang.name("region")
 
 #m = MapGrid(16384)
-#cPickle.dump(m, open("map.pickle", "w"))
+#pickle.dump(m, open("map.pickle", "w"))
 
-#m = cPickle.load(open("map.pickle"))
+#m = pickle.load(open("map.pickle"))
 #m.plot()
 #plt.savefig("test.png", dpi=150)
         
         
 ## In[88]:
 if __name__ == '__main__':
-    for i in xrange(100):
+    for i in range(100):
         plt.close('all')
         while True:
             try:
@@ -886,5 +886,5 @@ if __name__ == '__main__':
                 m.plot(filename)
                 break
             except AssertionError:
-                print "Failed assertion, retrying"
+                print("Failed assertion, retrying")
 

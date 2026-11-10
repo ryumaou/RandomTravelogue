@@ -1,2 +1,4 @@
 novel
 tests
+__pycache__/
+*.pyc

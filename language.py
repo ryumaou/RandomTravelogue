@@ -20,7 +20,7 @@ def choose(lst, exponent=2):
 class Language(object):
     def __init__(self, phonemes, syll='CVC', ortho={}, wordlength=(1,4), restricts=[]):
         self.phonemes = {}
-        for k, v in phonemes.iteritems():
+        for k, v in phonemes.items():
             v = list(v)
             random.shuffle(v)
             self.phonemes[k] = v
@@ -67,7 +67,7 @@ class Language(object):
         n = random.randrange(len(morphemes) + (10 if key is None else 1))
         if n < len(morphemes):
             return morphemes[n]
-        for _ in xrange(100):
+        for _ in range(100):
             s = self.orthosyll()
             if maxlength and len(s) > maxlength:
                 continue
@@ -88,7 +88,7 @@ class Language(object):
                 self.last_n = self.last_n[-3:]
                 return ws[n]
             l = random.randrange(*self.wordlength)
-            keys = [key] + [None for _ in xrange(l-1)]
+            keys = [key] + [None for _ in range(l-1)]
             random.shuffle(keys)
             w = ''.join(self.morpheme(k) for k in keys)
             ws.append(w)
@@ -182,21 +182,21 @@ def get_language():
     return l
 
 def show_language(l):
-    print l.phonemes['V'], l.phonemes['C']
-    if 'F' in l.syll: print l.phonemes['F'],
-    if 'L' in l.syll: print l.phonemes['L'],
-    if 'S' in l.syll: print l.phonemes['S'],
-    print l.syll
+    print(l.phonemes['V'], l.phonemes['C'])
+    if 'F' in l.syll: print(l.phonemes['F'], end=" ")
+    if 'L' in l.syll: print(l.phonemes['L'], end=" ")
+    if 'S' in l.syll: print(l.phonemes['S'], end=" ")
+    print(l.syll)
     ps = set()
     while len(ps) < 10:
         ps.add(l.name("city"))
-    print u', '.join(ps)
+    print(u', '.join(ps))
     ps = set()
     while len(ps) < 10:
         ps.add(l.name("sea"))
-    print u', '.join(ps)
-    print "* * *"
+    print(u', '.join(ps))
+    print("* * *")
 
 if __name__ == '__main__':
-    for _ in xrange(20):
+    for _ in range(20):
         show_language(get_language())
