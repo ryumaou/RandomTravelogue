@@ -329,34 +329,45 @@ class MapGrid(object):
         self.clean_coast()
 
     def island_heightmap(self):
-        self.erodability[:] = np.exp(
-                np.random.normal(0, 4))
-        theta = np.random.random() * 2 * np.pi
-        dvxs = 0.5 * (self.vxs + self.dvxs)
-        x = (dvxs[:,0]-.5) * np.cos(theta) + (dvxs[:,1]-.5) * np.sin(theta)
-        y = (dvxs[:,0]-.5) * -np.sin(theta) + (dvxs[:,1]-.5) * np.cos(theta)
-        self.elevation[:-1] = 0.001 * (1 - distance(self.vxs, 0.5))
-        manhattan = np.max(np.abs(self.vxs - 0.5), 1) 
-        xs = x[(manhattan < 0.3) & (np.abs(y) < 0.1)]
-        n = np.random.randint(2, 6)
-        for i, u in enumerate(np.linspace(xs.min(), xs.max(), n) - 0.05):
-            v = np.random.normal(0, 0.05)
-            d = ((x - u) ** 2 + (y - v) ** 2) ** 0.5
-            eruption = np.maximum(1 + 0.2 * i - d/0.15, 0) ** 2
-            print("Erupting", self.vxs[np.argmax(eruption),:])
-            self.elevation[:-1] = np.maximum(
-                    self.elevation[:-1], eruption)
-            self.do_erosion(20, 0.005)
-            self.raise_sealevel(80)
-        
+        theta = np.random.uniform(0, 2 * np.pi)
+        along = np.array([np.cos(theta), np.sin(theta)])
+        across = np.array([-along[1], along[0]])
+        count = np.random.randint(2, 5)
+        radii = np.random.uniform(0.045, 0.135, count)
+        # Reserve room for coastline variation and water between footprints.
+        gap = 0.025
+        bounds = 1.32 * radii
+        scale = min(1, (0.80 - gap * (count - 1)) / (2 * bounds.sum()))
+        radii *= scale
+        bounds *= scale
+        widths = 2 * bounds
+        span = widths.sum() + gap * (count - 1)
+        offsets = np.cumsum(widths + gap) - bounds - gap - span / 2
+        heights = np.zeros(self.nvxs)
+        for offset, radius in zip(offsets, radii):
+            center = 0.5 + offset * along + np.random.uniform(-0.035, 0.035) * across
+            x, y = (self.vxs - center).T
+            angle = np.arctan2(y, x)
+            phase = np.random.uniform(0, 2 * np.pi, 3)
+            orientation = angle - np.random.uniform(0, 2 * np.pi)
+            aspect = np.random.uniform(0.48, 1.0)
+            ellipse = radius / np.hypot(np.cos(orientation),
+                                        np.sin(orientation) / aspect)
+            lobes = np.random.uniform([0.04, 0.04, 0.02], [0.12, 0.13, 0.07])
+            shoreline = ellipse * (1 + lobes[0] * np.cos(angle + phase[0])
+                                     + lobes[1] * np.cos(3 * angle + phase[1])
+                                     + lobes[2] * np.cos(5 * angle + phase[2]))
+            inland = np.maximum(1 - np.hypot(x, y) / shoreline, 0)
+            peak = np.random.uniform(0.65, 1.15)
+            heights = np.maximum(heights, peak * inland ** 1.4)
+
+        self.erodability[:] = np.exp(np.random.normal(0, 1))
+        self.elevation[:-1] = heights
         self.do_erosion(40, 0.005)
-        
-        maxheight = 30 * (0.46 - manhattan)
-        self.elevation[:-1] = np.minimum(maxheight, self.elevation[:-1])
-        
-        sealevel = np.random.randint(85, 92)
-        self.raise_sealevel(sealevel)
-        self.clean_coast()
+        # Erode the interior while keeping the channels and coastlines intact.
+        self.elevation[:-1] = np.where(
+            heights > 0, np.maximum(self.elevation[:-1], 0.05 * heights), 0
+        )
 
     def mountain_heightmap(self):
         theta = np.random.random() * 2 * np.pi
