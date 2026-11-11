@@ -332,12 +332,13 @@ class MapGrid(object):
         theta = np.random.uniform(0, 2 * np.pi)
         along = np.array([np.cos(theta), np.sin(theta)])
         across = np.array([-along[1], along[0]])
-        count = np.random.randint(2, 5)
+        count = np.random.randint(1, 6)
         radii = np.random.uniform(0.045, 0.135, count)
         # Reserve room for coastline variation and water between footprints.
         gap = 0.025
         bounds = 1.32 * radii
-        scale = min(1, (0.80 - gap * (count - 1)) / (2 * bounds.sum()))
+        target_span = np.random.uniform(0.65, 0.80)
+        scale = (target_span - gap * (count - 1)) / (2 * bounds.sum())
         radii *= scale
         bounds *= scale
         widths = 2 * bounds
@@ -346,6 +347,9 @@ class MapGrid(object):
         heights = np.zeros(self.nvxs)
         for offset, radius in zip(offsets, radii):
             center = 0.5 + offset * along + np.random.uniform(-0.035, 0.035) * across
+            # Include every shoreline lobe when fitting inside a water margin.
+            clearance = np.min(np.minimum(center, 1 - center)) - 0.10
+            radius = min(radius, clearance / 1.32)
             x, y = (self.vxs - center).T
             angle = np.arctan2(y, x)
             phase = np.random.uniform(0, 2 * np.pi, 3)
@@ -525,9 +529,31 @@ class MapGrid(object):
         self.city_score = self.flow ** 0.5
         self.city_score[self.elevation[:-1] <= 0] = -9999999
         self.cities = []
+        self.island_cities = []
+        if self.mode == "island":
+            # Seed one stop per connected landmass before placing extra cities.
+            remaining = set(np.flatnonzero(self.elevation[:-1] > 0))
+            while remaining:
+                pending = [remaining.pop()]
+                island = []
+                while pending:
+                    vertex = pending.pop()
+                    island.append(vertex)
+                    for neighbor in self.adj_vxs[vertex]:
+                        if neighbor in remaining:
+                            remaining.remove(neighbor)
+                            pending.append(neighbor)
+                city = max(island, key=lambda vertex: self.city_score[vertex])
+                self.island_cities.append(city)
+                self.cities.append(city)
+                self.city_score -= 0.01 / (
+                    distance(self.vxs, self.vxs[city, :]) + 1e-9
+                )
+        n = max(n, len(self.cities))
         while len(self.cities) < n:
             newcity = np.argmax(self.city_score)
-            if np.random.random() < (len(self.cities) + 1) ** -0.2 and \
+            if newcity not in self.cities and \
+                    np.random.random() < (len(self.cities) + 1) ** -0.2 and \
                     0.1 < self.vxs[newcity,0] < 0.9 and \
                     0.1 < self.vxs[newcity,1] < 0.9:
                 self.cities.append(newcity)
@@ -638,6 +664,8 @@ class MapGrid(object):
             return path, length
 
     def grow_territory(self, n=7):
+        # Every island's stop must be a capital to enter the narrated route.
+        n = max(n, len(getattr(self, "island_cities", [])))
         done = np.zeros(self.nvxs, np.int32) - 1
         q = []
         for city in self.cities[:n]:
